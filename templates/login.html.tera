@@ -1,0 +1,23 @@
+<html>
+    <head>
+        <title>Human Ratings</title>
+    </head>
+    <body>
+        <div style="width: 75%; margin: 0px auto" align="center">
+            <h2>Welcome to the surface material human rating experiment!</h2>
+
+            <form action="/logged_in" method="POST">
+                <input type="hidden" name="redir" value="{{ redir }}"/>
+                <label for="user_name">Please enter your name so we can keep track of which surfaces you've rated: </label>
+                <br/>
+                <br/>
+                <input type="text" name="user_name" size="50"/>
+                <br/>
+                <br/>
+                <input type="submit" value="Log in"/>
+            </form>
+        </div>
+    </body>
+</html>
+
+

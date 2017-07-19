@@ -1,0 +1,20 @@
+[package]
+name = "human"
+version = "0.1.0"
+authors = ["Hogshead <hogshead@alexburka.com>"]
+
+[dependencies]
+rocket = "0.3.0"
+rocket_codegen = "0.3.0"
+rocket_contrib = { version = "0.3.0", default-features = false, features = ["tera_templates"] }
+serde = "1.0"
+serde_derive = "1.0"
+serde_json = "1.0"
+
+error-chain = "0.10.0"
+glob = "0.2.11"
+guard = "0.3.3"
+rand = "0.3.15"
+
+flow = { path = "../../nri/crates/back/flow" }
+

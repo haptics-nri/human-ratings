@@ -1,0 +1,30 @@
+<html>
+    <head>
+        <title>Human Ratings</title>
+    </head>
+    <body>
+        <h4>Surfaces</h4>
+        <table>
+            {% for surface in surfaces %}
+                <tr>
+                    <td>{{ surface.flow }}</td>
+                    <td><img src="{{ surface.image }}" width=100 /></td>
+                    <td>
+                        <table>
+                            {% for rating in surface.ratings %}
+                                <tr>
+                                    <td>{{ rating.prompt }}</td>
+                                    <td>{{ rating.answer }}</td>
+                                </tr>
+                            {% endfor %}
+                        </table>
+                    </td>
+                </tr>
+            {% endfor %}
+        </table>
+        <p>
+            {{ surfaces | length }} flows scanned in {{ time }}.
+        </p>
+    </body>
+</html>
+

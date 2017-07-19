@@ -1,0 +1,83 @@
+<html>
+    <head>
+        <title>Human Ratings</title>
+    </head>
+    <body>
+        <div style="width: 75%; margin: 0px auto" align="center">
+            <h2>Welcome to the surface material human rating experiment!</h2>
+
+            <h3>Hello {{ user.name }}! <small>(not {{ user.name }}? <a href="/login">click here</a>)</small></h3>
+
+            <h4>Instructions</h4>
+
+            The image below shows a closeup picture of a surface.
+
+            Use the form to indicate your estimation of its properties if you were to touch it with your finger.
+
+            If the image quality is bad, skip the main form and use the one below.
+
+            <br/>
+            <br/>
+
+            <img width="25%" src="{{ surface.image }}"/>
+
+            <br/>
+            <br/>
+
+            <form action="/rate" method="POST">
+                <input type="hidden" name="image" value="{{ surface.image }}"/>
+                <table>
+                    {% for rating in surface.ratings %}
+                        <tr>
+                            <td colspan=5>
+                                {{ rating.long }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <input type="radio" name="{{ rating.short }}" id="{{ rating.short }}-1" value="1"/><label for="{{ rating.short }}-1"> 1</label>
+                            </td>                                                                                                                     
+                            <td>                                                                                                                      
+                                <input type="radio" name="{{ rating.short }}" id="{{ rating.short }}-2" value="2"/><label for="{{ rating.short }}-2"> 2</label>
+                            </td>                                                                                                                     
+                            <td>                                                                                                                      
+                                <input type="radio" name="{{ rating.short }}" id="{{ rating.short }}-3" value="3"/><label for="{{ rating.short }}-3"> 3</label>
+                            </td>                                                                                                                     
+                            <td>                                                                                                                      
+                                <input type="radio" name="{{ rating.short }}" id="{{ rating.short }}-4" value="4"/><label for="{{ rating.short }}-4"> 4</label>
+                            </td>                                                                                                                     
+                            <td>                                                                                                                      
+                                <input type="radio" name="{{ rating.short }}" id="{{ rating.short }}-5" value="5"/><label for="{{ rating.short }}-5"> 5</label>
+                            </td>
+                        </tr>
+                        <tr><td><br/></td></tr>
+                    {% endfor %}
+                </table>
+                <font color="red">{{ rate_error }}</font><br/>
+                <input type="submit" value="Submit answers"/>
+            </form>
+            <hr/>
+            <form action="/report" method="POST">
+                <input type="hidden" name="image" value="{{ surface.image }}"/>
+                <table>
+                    <tr>
+                        <td colspan=3>
+                            I can't answer the above questions because the image is too:
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><input type="checkbox" name="dark" id="dark"/><label for="dark"> Dark</label></td>
+                        <td><input type="checkbox" name="bright" id="bright"/><label for="bright"> Bright</label></td>
+                        <td><input type="checkbox" name="blurry" id="blurry"/><label for="blurry"> Blurry</label></td>
+                        <td><input type="checkbox" name="grainy" id="grainy"/><label for="grainy"> Grainy</label></td>
+                    </tr>
+                    <tr><td><br/></td></tr>
+                </table>
+                <font color="red">{{ report_error }}</font><br/>
+                <input type="submit" value="Report bad image"/>
+            </form>
+        </div>
+    </body>
+</html>
+
+
