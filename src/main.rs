@@ -1,6 +1,10 @@
-#![feature(custom_derive, plugin)] #![plugin(rocket_codegen)]
+#![feature(custom_derive)]
 #![feature(macro_vis_matcher)]
 #![feature(catch_expr)]
+#![feature(never_type)]
+#![feature(stmt_expr_attributes)]
+#![feature(plugin)]
+#![plugin(rocket_codegen)]
 
 extern crate rocket;
 extern crate rocket_contrib;
@@ -31,9 +35,10 @@ use utils::*;
 
 fn main() {
     try_main().unwrap();
+    unreachable!();
 }
 
-fn try_main() -> Result<()> {
+fn try_main() -> Result<!> {
     println!("Initializing output files...");
     let meta = fs::metadata(settings::RATINGS);
     if meta.map(|m| m.len() == 0).unwrap_or(true) {
@@ -59,7 +64,7 @@ fn try_main() -> Result<()> {
     }
 
     println!("Launching rocket...");
-    rocket::ignite()
+    Err(rocket::ignite()
         .mount("/", routes![routes::index, routes::get_file, routes::list,
                             routes::login_from_query, routes::login_from_header, routes::logged_in,
                             routes::episode, routes::episode_login,
@@ -69,8 +74,8 @@ fn try_main() -> Result<()> {
         .manage(surfaces)
         .manage(ActiveUsers::default())
         .attach(Template::fairing())
-        .launch();
+        .launch())?;
 
-    Ok(())
+    unreachable!();
 }
 

@@ -1,6 +1,7 @@
 use std::io;
 use std::path::PathBuf;
 
+use rocket::error::LaunchError;
 use rocket::response::Failure;
 use glob::{GlobError, PatternError};
 
@@ -17,6 +18,7 @@ error_chain! {
         Io(io::Error);
         Glob(GlobError);
         GlobPattern(PatternError);
+        Launch(LaunchError);
     }
 }
 
