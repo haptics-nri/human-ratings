@@ -49,7 +49,11 @@ handle! {
             path.push(format!("{}", idx));
             path.push("surface.png");
 
-            return Ok(NamedFile::open(&path).map_err(|e| ErrorKind::IoOp(e, "open", path.to_owned()))?);
+            match NamedFile::open(&path) {
+                Ok(file) => return Ok(file),
+                Err(ref e) if e.kind() == io::ErrorKind::NotFound => continue,
+                Err(e) => Err(ErrorKind::IoOp(e, "open", path.to_owned()))?
+            }
         }
         Err(io::Error::new(io::ErrorKind::NotFound, "image not found in any datadir").into())
     }
@@ -57,10 +61,24 @@ handle! {
 
 handle! {
     #[get("/list")]
-    pub fn list(surfaces: State<Vec<SurfaceData>>) -> Template {
+    pub fn list(surfaces: State<Vec<SurfaceData>>, reports: State<Reports>) -> Template {
         let start = SystemTime::now();
 
-        Ok(Template::render("list", json!({ "surfaces": &*surfaces, "time": elapsed(start) })))
+        let reports = reports.lock().unwrap();
+        let surfaces = surfaces.iter()
+            .map(|surf| {
+                let mut json = ::serde_json::to_value(surf).unwrap();
+                if reports.contains(&(surf.date, surf.flow, surf.num)) {
+                    json.as_object_mut().unwrap().insert("report".into(), true.into());
+                }
+                json
+            })
+            .collect::<Vec<_>>();
+
+        Ok(Template::render("list", json!({
+            "surfaces": surfaces,
+            "time": elapsed(start)
+        })))
     }
 }
 
@@ -173,7 +191,7 @@ handle_login! {
 
 handle_login! {
     #[post("/report", data="<report>")]
-    fn report/report_login(user: User, users: State<ActiveUsers>, surfaces: State<Vec<SurfaceData>>, report: Form<Report>) -> Template {
+    fn report/report_login(user: User, users: State<ActiveUsers>, surfaces: State<Vec<SurfaceData>>, reports: State<Reports>, report: Form<Report>) -> Template {
         let Report { date, flow, num, dark, bright, blurry, grainy } = report.into_inner();
 
         if dark || bright || blurry || grainy {
@@ -182,6 +200,8 @@ handle_login! {
                 let user_info = users.entry(user.clone()).or_insert_with(Default::default);
                 user_info.seen.push((date, flow, num));
             }
+
+            reports.lock().unwrap().insert((date, flow, num));
 
             let mut file = OpenOptions::new().append(true).open(settings::REPORTS)?;
             writeln!(&mut file, "{},{},{},{},{},{},{},{}", user.name, date, flow, num, dark, bright, blurry, grainy)?;

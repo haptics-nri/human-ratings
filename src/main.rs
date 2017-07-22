@@ -27,7 +27,7 @@ mod settings;
 mod structs;
 mod utils;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::io::{Seek, SeekFrom};
 use std::path::Path;
@@ -48,8 +48,10 @@ fn main() {
 
 fn try_main() -> Result<!> {
     println!("Initializing output files...");
-    let mut users: HashMap<User, UserInfo> = HashMap::new();
+    let mut users = HashMap::<User, UserInfo>::new();
+    let mut reports = HashSet::new();;
     output_file(settings::RATINGS,
+                &["User", "Date", "Flow type", "Number", "Warm", "Hard", "Rough", "Sticky"],
                 |mut csv| {
                     let ratings = csv.headers()?.iter()
                                                 .skip(4)
@@ -74,6 +76,7 @@ fn try_main() -> Result<!> {
                     Ok(())
                 })?;
     output_file(settings::REPORTS,
+                &["User", "Date", "Flow type", "Number", "Dark", "Bright", "Blurry", "Grainy"],
                 |mut csv| {
                     unborrow!(csv.set_headers(csv.headers().unwrap()
                                                  .iter()
@@ -84,6 +87,7 @@ fn try_main() -> Result<!> {
                         let (report, username) = row.without_user();
                         let user_info = users.entry(User { name: username }).or_insert_with(Default::default);
                         user_info.seen.push((report.date, report.flow, report.num));
+                        reports.insert((report.date, report.flow, report.num));
                     }
                     Ok(())
                 })?;
@@ -109,6 +113,7 @@ fn try_main() -> Result<!> {
                             routes::rate, routes::rate_login, routes::report, routes::report_login,
                            ])
         .manage(surfaces)
+        .manage(Mutex::new(reports))
         .manage(Mutex::new(users))
         .attach(Template::fairing())
         .launch())?;
@@ -116,7 +121,7 @@ fn try_main() -> Result<!> {
     unreachable!();
 }
 
-pub fn output_file<P: AsRef<Path>, F: FnOnce(csv::Reader<File>) -> Result<()>>(p: P, process: F) -> Result<()> {
+pub fn output_file<P: AsRef<Path>, F: FnOnce(csv::Reader<File>) -> Result<()>>(p: P, headers: &[&str], process: F) -> Result<()> {
     println!("\treading file {:?}", p.as_ref());
 
     let mut file = OpenOptions::new()
@@ -125,6 +130,10 @@ pub fn output_file<P: AsRef<Path>, F: FnOnce(csv::Reader<File>) -> Result<()>>(p
         .read(true)
         .write(true)
         .open(p)?;
+
+    if file.metadata()?.len() == 0 {
+        csv::Writer::from_writer(&file).write_record(headers)?;
+    }
 
     file.seek(SeekFrom::Start(0))?;
     let csv = csv::Reader::from_reader(file);

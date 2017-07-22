@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::BufReader;
 use std::fmt;
 use std::fs::File;
@@ -35,6 +35,8 @@ pub struct UserInfo {
 
 /// Managed state type for active users table
 pub type ActiveUsers = Mutex<HashMap<User, UserInfo>>;
+/// Managed state type for tracking reported bad surfaces
+pub type Reports = Mutex<HashSet<(Datestamp, FlowType, u32)>>;
 
 /// 1-5 rating of a surface property
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,11 +91,11 @@ pub struct Rating {
 }
 
 /// YYYYMMDD date
-#[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Datestamp(pub u32);
 
 /// Episode type (end-effector type)
-#[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all="lowercase")]
 pub enum FlowType {
     /// Rigid stick

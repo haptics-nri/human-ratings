@@ -7,8 +7,15 @@
         <table>
             {% for surface in surfaces %}
                 <tr>
+                    <td>
+                        {{ loop.index }}
+                    </td>
                     <td>{{ surface.date }}/{{ surface.flow }}/{{ surface.number }}</td>
-                    <td><img src="/image/{{ surface.date }}/{{ surface.flow }}/{{ surface.number }}" width=100 /></td>
+                    <td>
+                        <a href="/{{ surface.date }}/{{ surface.flow }}/{{ surface.number }}">
+                            <img src="/image/{{ surface.date }}/{{ surface.flow }}/{{ surface.number }}" width=100 />
+                        </a>
+                    </td>
                     <td>
                         <table>
                             {% for prompt, answer in surface.ratings %}
@@ -18,6 +25,11 @@
                                 </tr>
                             {% endfor %}
                         </table>
+                    </td>
+                    <td>
+                        {% if surface.report %}
+                            BAD
+                        {% endif %}
                     </td>
                 </tr>
             {% endfor %}
