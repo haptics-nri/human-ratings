@@ -9,6 +9,7 @@ pub use std::result::Result as StdResult;
 
 error_chain! {
     errors {
+        IoOp(ioerr: io::Error, op: &'static str, path: PathBuf) {}
         Parse(p: PathBuf) {}
         BadParam(msg: &'static str) {}
         Rocket(f: Failure) {}
@@ -19,6 +20,7 @@ error_chain! {
         Glob(GlobError);
         GlobPattern(PatternError);
         Launch(LaunchError);
+        Csv(::csv::Error);
     }
 }
 

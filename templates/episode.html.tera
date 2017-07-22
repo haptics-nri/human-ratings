@@ -1,6 +1,12 @@
 <html>
     <head>
         <title>Human Ratings</title>
+        <style>
+            .prompt.warm:before { content: "What temperature would you feel when touching this surface? 1: ice cold beer bottle. 5: hot sand at the beach." }
+            .prompt.hard:before { content: "How soft or hard is this surface? 1: pillow. 5: rock." }
+            .prompt.rough:before { content: "How smooth or rough is this surface? 1: glass. 5: sandpaper." }
+            .prompt.sticky:before { content: "How slippery or sticky is this surface? This is NOT the same as roughness, nor is it sticky as in glue. This question refers to how much a finger would get stuck while rubbing due to friction with the surface. 1: silk. 5: rubber." }
+        </style>
     </head>
     <body>
         <div style="width: 75%; margin: 0px auto" align="center">
@@ -19,36 +25,27 @@
             <br/>
             <br/>
 
-            <img width="25%" src="{{ surface.image }}"/>
+            <img width="25%" src="/image/{{ surface.date }}/{{ surface.flow }}/{{ surface.number }}"/>
 
             <br/>
             <br/>
 
             <form action="/rate" method="POST">
-                <input type="hidden" name="image" value="{{ surface.image }}"/>
+                <input type="hidden" name="date" value="{{ surface.date }}"/>
+                <input type="hidden" name="flow" value="{{ surface.flow }}"/>
+                <input type="hidden" name="num" value="{{ surface.number }}"/>
                 <table>
-                    {% for rating in surface.ratings %}
+                    {% for short, _answer in surface.ratings %}
                         <tr>
-                            <td colspan=5>
-                                {{ rating.long }}
-                            </td>
+                            <td colspan=5 class="prompt {{ short }}"></td>
                         </tr>
                         <tr>
-                            <td>
-                                <input type="radio" name="{{ rating.short }}" id="{{ rating.short }}-1" value="1"/><label for="{{ rating.short }}-1"> 1</label>
-                            </td>                                                                                                                     
-                            <td>                                                                                                                      
-                                <input type="radio" name="{{ rating.short }}" id="{{ rating.short }}-2" value="2"/><label for="{{ rating.short }}-2"> 2</label>
-                            </td>                                                                                                                     
-                            <td>                                                                                                                      
-                                <input type="radio" name="{{ rating.short }}" id="{{ rating.short }}-3" value="3"/><label for="{{ rating.short }}-3"> 3</label>
-                            </td>                                                                                                                     
-                            <td>                                                                                                                      
-                                <input type="radio" name="{{ rating.short }}" id="{{ rating.short }}-4" value="4"/><label for="{{ rating.short }}-4"> 4</label>
-                            </td>                                                                                                                     
-                            <td>                                                                                                                      
-                                <input type="radio" name="{{ rating.short }}" id="{{ rating.short }}-5" value="5"/><label for="{{ rating.short }}-5"> 5</label>
-                            </td>
+                            {% for n in range(start=1, end=6) %}
+                                <td>
+                                    <input type="radio" name="{{ short }}" id="{{ short }}-{{ n }}" value="{{ n }}"/>
+                                    <label for="{{ short }}-{{ n }}">{{ n }}</label>
+                                </td>                                                                                                                     
+                            {% endfor %}
                         </tr>
                         <tr><td><br/></td></tr>
                     {% endfor %}
@@ -58,7 +55,9 @@
             </form>
             <hr/>
             <form action="/report" method="POST">
-                <input type="hidden" name="image" value="{{ surface.image }}"/>
+                <input type="hidden" name="date" value="{{ surface.date }}"/>
+                <input type="hidden" name="flow" value="{{ surface.flow }}"/>
+                <input type="hidden" name="num" value="{{ surface.number }}"/>
                 <table>
                     <tr>
                         <td colspan=3>

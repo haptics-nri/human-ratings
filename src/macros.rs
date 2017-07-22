@@ -6,7 +6,7 @@ macro_rules! handle {
                 println!("ERROR: {:?}", err);
                 let mut code = 500;
                 match *err.kind() {
-                    ErrorKind::Io(ref ioerr) => match ioerr.kind() {
+                    ErrorKind::Io(ref ioerr) | ErrorKind::IoOp(ref ioerr, ..) => match ioerr.kind() {
                         io::ErrorKind::NotFound => code = 404,
                         io::ErrorKind::PermissionDenied => code = 403,
                         _ => {}
@@ -31,6 +31,57 @@ macro_rules! handle_login {
         handle! {
             #[$method($($route)*)]
             $vis fn $name($user: $user_ty, $($params)*) -> $ret { $($body)* }
+        }
+    }
+}
+
+macro_rules! with_user {
+    (
+        $(#[$sattr:meta])*
+        $svis:vis struct $sname:ident/$uname:ident<$utype:ty> {
+            $(
+                $(#[$fattr:meta])*
+                $fvis:vis $fname:ident: $ftype:ty
+            ),*
+            $(,)*
+        }
+    ) => {
+        $(#[$sattr])*
+        $svis struct $sname {
+            $(
+                $(#[$fattr])*
+                $fvis $fname: $ftype
+            ),*
+        }
+
+        $(#[$sattr])*
+        $svis struct $uname {
+            user: $utype,
+            $(
+                $(#[$fattr])*
+                $fvis $fname: $ftype
+            ),*
+        }
+
+        impl $sname {
+            #[allow(dead_code)]
+            $svis fn with_user(self, user: $utype) -> $uname {
+                $uname {
+                    user,
+                    $($fname: self.$fname),*
+                }
+            }
+        }
+
+        impl $uname {
+            #[allow(dead_code)]
+            $svis fn without_user(self) -> ($sname, $utype) {
+                ($sname {
+                     $($fname: self.$fname),*
+                 },
+                 self.user
+                )
+            }
         }
     }
 }

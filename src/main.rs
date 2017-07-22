@@ -5,13 +5,17 @@
 #![feature(stmt_expr_attributes)]
 #![feature(plugin)]
 #![plugin(rocket_codegen)]
+#![allow(unreachable_patterns)] // TODO fix rocket bug re infallible FromParam
 
 extern crate rocket;
 extern crate rocket_contrib;
+extern crate serde;
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate serde_json;
+extern crate csv;
 #[macro_use] extern crate error_chain;
-#[macro_use] extern crate guard;
+#[macro_use] extern crate iflet;
+#[macro_use] extern crate unborrow;
 extern crate glob;
 extern crate rand;
 extern crate flow;
@@ -23,8 +27,12 @@ mod settings;
 mod structs;
 mod utils;
 
-use std::fs::{self, File};
-use std::io::Write;
+use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
+use std::io::{Seek, SeekFrom};
+use std::path::Path;
+use std::sync::Mutex;
+
 use rocket_contrib::Template;
 use glob::glob;
 
@@ -40,16 +48,45 @@ fn main() {
 
 fn try_main() -> Result<!> {
     println!("Initializing output files...");
-    let meta = fs::metadata(settings::RATINGS);
-    if meta.map(|m| m.len() == 0).unwrap_or(true) {
-        let mut ratings_file = File::create(settings::RATINGS)?;
-        writeln!(&mut ratings_file, "User,Date,Flow type,Number,Warm,Hard,Rough,Sticky")?;
-    }
-    let meta = fs::metadata(settings::REPORTS);
-    if meta.map(|m| m.len() == 0).unwrap_or(true) {
-        let mut reports_file = File::create(settings::REPORTS)?;
-        writeln!(&mut reports_file, "User,Date,Flow type,Number,Dark,Bright,Blurry,Grainy")?;
-    }
+    let mut users: HashMap<User, UserInfo> = HashMap::new();
+    output_file(settings::RATINGS,
+                |mut csv| {
+                    let ratings = csv.headers()?.iter()
+                                                .skip(4)
+                                                .map(|s| s.to_lowercase())
+                                                .collect::<Vec<_>>();
+                    for row in csv.records() {
+                        let mut row = row?;
+                        let answers = row.iter()
+                                         .skip(4)
+                                         .map(|s| s.parse())
+                                         .collect::<StdResult<Vec<_>,_>>()?;
+                        row.truncate(4);
+                        let row: SurfaceDataWithUser = row.deserialize(None)?;
+                        let (mut surface, username) = row.without_user();
+                        surface.ratings = ratings.iter()
+                                                 .cloned()
+                                                 .zip(answers)
+                                                 .collect();
+                        let user_info = users.entry(User { name: username }).or_insert_with(Default::default);
+                        user_info.seen.push((surface.date, surface.flow, surface.num));
+                    }
+                    Ok(())
+                })?;
+    output_file(settings::REPORTS,
+                |mut csv| {
+                    unborrow!(csv.set_headers(csv.headers().unwrap()
+                                                 .iter()
+                                                 .map(|s| s.split(' ').next().unwrap().to_lowercase())
+                                                 .collect()));
+                    for row in csv.deserialize() {
+                        let row: ReportWithUser = row?;
+                        let (report, username) = row.without_user();
+                        let user_info = users.entry(User { name: username }).or_insert_with(Default::default);
+                        user_info.seen.push((report.date, report.flow, report.num));
+                    }
+                    Ok(())
+                })?;
 
     println!("Scanning surfaces...");
     let mut surfaces = vec![];
@@ -72,10 +109,25 @@ fn try_main() -> Result<!> {
                             routes::rate, routes::rate_login, routes::report, routes::report_login,
                            ])
         .manage(surfaces)
-        .manage(ActiveUsers::default())
+        .manage(Mutex::new(users))
         .attach(Template::fairing())
         .launch())?;
 
     unreachable!();
+}
+
+pub fn output_file<P: AsRef<Path>, F: FnOnce(csv::Reader<File>) -> Result<()>>(p: P, process: F) -> Result<()> {
+    println!("\treading file {:?}", p.as_ref());
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(p)?;
+
+    file.seek(SeekFrom::Start(0))?;
+    let csv = csv::Reader::from_reader(file);
+    process(csv)
 }
 

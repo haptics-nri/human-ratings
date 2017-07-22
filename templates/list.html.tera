@@ -7,14 +7,14 @@
         <table>
             {% for surface in surfaces %}
                 <tr>
-                    <td>{{ surface.flow }}</td>
-                    <td><img src="{{ surface.image }}" width=100 /></td>
+                    <td>{{ surface.date }}/{{ surface.flow }}/{{ surface.number }}</td>
+                    <td><img src="/image/{{ surface.date }}/{{ surface.flow }}/{{ surface.number }}" width=100 /></td>
                     <td>
                         <table>
-                            {% for rating in surface.ratings %}
+                            {% for prompt, answer in surface.ratings %}
                                 <tr>
-                                    <td>{{ rating.prompt }}</td>
-                                    <td>{{ rating.answer }}</td>
+                                    <td>{{ prompt }}</td>
+                                    <td>{{ answer }}</td>
                                 </tr>
                             {% endfor %}
                         </table>

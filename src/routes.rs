@@ -1,6 +1,6 @@
 use std::fs::OpenOptions;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::SystemTime;
 
 use rocket::State;
@@ -40,17 +40,18 @@ pub fn index() -> &'static str {
 }
 
 handle! {
-    #[get("/<file..>", rank=2)]
-    pub fn get_file(file: PathBuf) -> NamedFile {
-        let mut path = PathBuf::from("/");
-        path.push(file);
+    #[get("/image/<date>/<flow>/<idx>")]
+    pub fn get_file(date: Datestamp, flow: FlowType, idx: u32) -> NamedFile {
+        for dir in settings::DATADIRS {
+            let mut path = PathBuf::from(dir);
+            path.push(format!("{}", date));
+            path.push(format!("{}", flow));
+            path.push(format!("{}", idx));
+            path.push("surface.png");
 
-        let path = path.canonicalize()?;
-        if settings::DATADIRS.iter().any(|dir| path.starts_with(dir)) {
-            Ok(NamedFile::open(&path)?)
-        } else {
-            Err(io::Error::new(io::ErrorKind::PermissionDenied, "path not in any datadir"))?
+            return Ok(NamedFile::open(&path).map_err(|e| ErrorKind::IoOp(e, "open", path.to_owned()))?);
         }
+        Err(io::Error::new(io::ErrorKind::NotFound, "image not found in any datadir").into())
     }
 }
 
@@ -68,7 +69,7 @@ handle_login! {
     pub fn episode/episode_login(user: User, users: State<ActiveUsers>, date: Datestamp, flow: Option<FlowType>, idx: u32) -> Template {
         let flow = flow.ok_or(ErrorKind::BadParam("invalid flow type"))?;
 
-        let mut data = {
+        let data = {
             let mut data = None;
             for dir in settings::DATADIRS {
                 let mut path = PathBuf::from(dir);
@@ -91,22 +92,6 @@ handle_login! {
 
             data.ok_or(io::Error::new(io::ErrorKind::NotFound, "episode not found in any datadir"))?
         };
-
-        for rating in data.ratings.iter_mut() {
-            if rating.prompt == "cool/warm" {
-                rating.short = Some("warm");
-                rating.long = Some("What temperature would you feel when touching this surface? 1: ice cold beer bottle. 5: hot sand at the beach.");
-            } else if rating.prompt == "soft/hard" {
-                rating.short = Some("hard");
-                rating.long = Some("How soft or hard is this surface? 1: pillow. 5: rock.");
-            } else if rating.prompt == "smooth/rough" {
-                rating.short = Some("rough");
-                rating.long = Some("How smooth or rough is this surface? 1: glass. 5: sandpaper.");
-            } else if rating.prompt == "slippery/sticky" {
-                rating.short = Some("sticky");
-                rating.long = Some("How slippery or sticky is this surface? This is NOT the same as roughness, nor is it sticky as in glue. This question refers to how much a finger would get stuck while rubbing due to friction with the surface. 1: silk. 5: rubber.");
-            }
-        }
 
         let mut users = users.lock().unwrap();
         let user_info = users.entry(user.clone()).or_insert_with(Default::default);
@@ -158,46 +143,59 @@ handle_login! {
 }
 
 handle_login! {
-    #[post("/rate", data="<ratings>")]
-    fn rate/rate_login(user: User, referer: Referer, users: State<ActiveUsers>, ratings: Option<Form<Ratings>>) -> Redirect {
-        let mut users = users.lock().unwrap();
-        let user_info = users.entry(user.clone()).or_insert_with(Default::default);
+    #[post("/rate", data="<form>")]
+    fn rate/rate_login(user: User, users: State<ActiveUsers>, surfaces: State<Vec<SurfaceData>>, form: Form<SurfaceData>) -> Template {
+        let SurfaceData { date, flow, num, ratings } = form.into_inner();
+        if_chain!([let Some(warm) => ratings.get("warm"),
+                   let Some(hard) => ratings.get("hard"),
+                   let Some(rough) => ratings.get("rough"),
+                   let Some(sticky) => ratings.get("sticky")] {
+            {
+                let mut users = users.lock().unwrap();
+                let user_info = users.entry(user.clone()).or_insert_with(Default::default);
+                user_info.seen.push((date, flow, num));
+            }
 
-        guard!(let Some(ratings) = ratings else {
-            user_info.rate_error = true;
-            return Ok(Redirect::to(&referer.uri))
-        });
-        let ratings = ratings.get();
+            let mut file = OpenOptions::new().append(true).open(settings::RATINGS)?;
+            writeln!(&mut file, "{},{},{},{},{},{},{},{}", user.name, date, flow, num, warm.0, hard.0, rough.0, sticky.0)?;
 
-        let (date, flowname, num) = extract_path(Path::new(&ratings.image));
-        user_info.seen.push((date, flowname, num));
-
-        let mut file = OpenOptions::new().append(true).open(settings::RATINGS)?;
-        writeln!(&mut file, "{},{},{},{},{},{},{},{}", user.name, date, flowname, num, ratings.warm.0, ratings.hard.0, ratings.rough.0, ratings.sticky.0)?;
-
-        Ok(Redirect::to("/random"))
+            Ok(random(user, users, surfaces)?)
+        } else {
+            {
+                let mut users = users.lock().unwrap();
+                let user_info = users.entry(user.clone()).or_insert_with(Default::default);
+                user_info.rate_error = true;
+            }
+            Ok(episode(user, users, date, Some(flow), num)?)
+        })
     }
 }
 
 handle_login! {
     #[post("/report", data="<report>")]
-    fn report/report_login(user: User, referer: Referer, users: State<ActiveUsers>, report: Form<Report>) -> Redirect {
-        let mut users = users.lock().unwrap();
-        let user_info = users.entry(user.clone()).or_insert_with(Default::default);
-        let report = report.get();
+    fn report/report_login(user: User, users: State<ActiveUsers>, surfaces: State<Vec<SurfaceData>>, report: Form<Report>) -> Template {
+        let Report { date, flow, num, dark, bright, blurry, grainy } = report.into_inner();
 
-        if !(report.dark || report.bright || report.blurry || report.grainy) {
-            user_info.report_error = true;
-            return Ok(Redirect::to(&referer.uri))
+        if dark || bright || blurry || grainy {
+            {
+                let mut users = users.lock().unwrap();
+                let user_info = users.entry(user.clone()).or_insert_with(Default::default);
+                user_info.seen.push((date, flow, num));
+            }
+
+            let mut file = OpenOptions::new().append(true).open(settings::REPORTS)?;
+            writeln!(&mut file, "{},{},{},{},{},{},{},{}", user.name, date, flow, num, dark, bright, blurry, grainy)?;
+
+            Ok(random(user, users, surfaces)?)
+        } else {
+            {
+                let mut users = users.lock().unwrap();
+                let user_info = users.entry(user.clone()).or_insert_with(Default::default);
+                user_info.report_error = true;
+            }
+            Ok(episode(user, users, date, Some(flow), num)?)
         }
 
-        let (date, flowname, num) = extract_path(Path::new(&report.image));
-        user_info.seen.push((date, flowname, num));
-
-        let mut file = OpenOptions::new().append(true).open(settings::REPORTS)?;
-        writeln!(&mut file, "{},{},{},{},{},{},{},{}", user.name, date, flowname, num, report.dark, report.bright, report.blurry, report.grainy)?;
-
-        Ok(Redirect::to("/random"))
     }
 }
 

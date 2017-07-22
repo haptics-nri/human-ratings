@@ -2,12 +2,14 @@ use std::collections::HashMap;
 use std::io::BufReader;
 use std::fmt;
 use std::fs::File;
+use std::num::ParseIntError;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Mutex;
 
+use rocket;
 use rocket::http::RawStr;
-use rocket::request::{Request, FromRequest, FromParam, FromFormValue, Outcome};
+use rocket::request::{Request, FromRequest, FromParam, FromForm, FromFormValue, FormItems, Outcome};
 use rocket::outcome::IntoOutcome;
 use flow::{Flow, FlowCmd};
 
@@ -35,75 +37,64 @@ pub struct UserInfo {
 pub type ActiveUsers = Mutex<HashMap<User, UserInfo>>;
 
 /// 1-5 rating of a surface property
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Likert(pub u8);
 
-/// Ratings that a human should give for a surface
-#[derive(FromForm)]
-pub struct Ratings {
-    /// Full path to surface.png
-    pub image: String,
-    /// Rating for cold/warm
-    pub warm: Likert,
-    /// Rating for soft/hard
-    pub hard: Likert,
-    /// Rating for smooth/rough
-    pub rough: Likert,
-    /// Rating for slippery/sticky
-    pub sticky: Likert
+with_user! {
+    /// Report information for a bad image
+    #[derive(FromForm, Serialize, Deserialize)]
+    pub struct Report/ReportWithUser<String> {
+        /// Episode date (e.g. $DATADIR/$date/$flow/$num)
+        pub date: Datestamp,
+        /// Episode flow type (e.g. $DATADIR/$date/$flow/$num)
+        pub flow: FlowType,
+        /// Episode number (e.g. $DATADIR/$date/$flow/$num)
+        #[serde(rename="number")]
+        pub num: u32,
+        /// Is the image too dark?
+        pub dark: bool,
+        /// Is the image too bright?
+        pub bright: bool,
+        /// Is the image too blurry?
+        pub blurry: bool,
+        /// Is the image too grainy?
+        pub grainy: bool
+    }
 }
 
-/// Report information for a bad image
-#[derive(FromForm)]
-pub struct Report {
-    /// Full path to surface.png
-    pub image: String,
-    /// Is the image too dark?
-    pub dark: bool,
-    /// Is the image too bright?
-    pub bright: bool,
-    /// Is the image too blurry?
-    pub blurry: bool,
-    /// Is the image too grainy?
-    pub grainy: bool
-}
-
-/// Surface info for passing to a template
-#[derive(Serialize)]
-pub struct SurfaceData {
-    /// Episode date (e.g. $DATADIR/$date/$flow/$num)
-    pub date: Datestamp,
-    /// Episode flow type (e.g. $DATADIR/$date/$flow/$num)
-    pub flow: FlowType,
-    /// Episode number (e.g. $DATADIR/$date/$flow/$num)
-    pub num: u32,
-    /// Full path to surface.png
-    pub image: String,
-    /// Ratings loaded from flow file
-    pub ratings: Vec<Rating>
+with_user! {
+    /// Surface info for passing to a template
+    #[derive(Serialize, Deserialize)]
+    pub struct SurfaceData/SurfaceDataWithUser<String> {
+        /// Episode date (e.g. $DATADIR/$date/$flow/$num)
+        pub date: Datestamp,
+        /// Episode flow type (e.g. $DATADIR/$date/$flow/$num)
+        pub flow: FlowType,
+        /// Episode number (e.g. $DATADIR/$date/$flow/$num)
+        #[serde(rename="number")]
+        pub num: u32,
+        /// Ratings loaded from flow file
+        #[serde(skip_deserializing)]
+        pub ratings: HashMap<String, Likert>
+    }
 }
 
 /// Rating loaded from flow file
-#[derive(Serialize, Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct Rating {
-    /// Question shown during episode
-    pub prompt: String,
+    /// Short version of prompt (used for radio button name)
+    pub short: String,
     /// Answer given by experimenter
     pub answer: u8,
-    
-    /// Short version of prompt (used for radio button name)
-    #[serde(skip_serializing_if="Option::is_none")]
-    pub short: Option<&'static str>,
-    /// Long version of prompt (displayed in rating form)
-    #[serde(skip_serializing_if="Option::is_none")]
-    pub long: Option<&'static str>,
 }
 
 /// YYYYMMDD date
-#[derive(Copy, Clone, PartialEq, Serialize)]
+#[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Datestamp(pub u32);
 
 /// Episode type (end-effector type)
-#[derive(Copy, Clone, PartialEq, Serialize)]
+#[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all="lowercase")]
 pub enum FlowType {
     /// Rigid stick
     StickCam,
@@ -153,14 +144,77 @@ impl<'a, 'r> FromRequest<'a, 'r> for User {
     }
 }
 
+impl<'f> FromForm<'f> for SurfaceData {
+    type Error = rocket::Error;
+
+    fn from_form(items: &mut FormItems<'f>, strict: bool) -> StdResult<Self, Self::Error> {
+        let mut date = None;
+        let mut flow = None;
+        let mut num = None;
+        let mut ratings = HashMap::new();
+
+        macro_rules! arm {
+            ($val:expr, $fld:ident) => {
+                $fld = Some(FromFormValue::from_form_value($val)
+                                .map_err(|e| {
+                                    println!("\t=> Error parsing form val '{}': {:?}", stringify!($fld), e);
+                                    rocket::Error::BadParse
+                                })?)
+            }
+        }
+        for (key, value) in items {
+            match key.as_str() {
+                "date" => arm!(value, date),
+                "flow" => arm!(value, flow),
+                "num" => arm!(value, num),
+                s => {
+                    if let Ok(n) = Likert::from_form_value(value) {
+                        ratings.insert(s.to_string(), n);
+                    } else if strict {
+                        return Err(rocket::Error::BadParse);
+                    }
+                }
+            }
+        }
+
+        if let (Some(date), Some(flow), Some(num)) = (date, flow, num) {
+            Ok(SurfaceData {
+                date: date,
+                flow: flow,
+                num: num,
+                ratings
+            })
+        } else {
+            println!("\t=> Error parsing form: missing values");
+            Err(rocket::Error::BadParse)
+        }
+    }
+}
+
+impl FromStr for Likert {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
+        match s.parse() {
+            Ok(n @ 1...5) => Ok(Likert(n)),
+            _ => Err("invalid 1-5 rating")
+        }
+    }
+}
+
 impl<'v> FromFormValue<'v> for Likert {
-    type Error = &'v RawStr;
+    type Error = <Self as FromStr>::Err;
 
     fn from_form_value(v: &'v RawStr) -> StdResult<Self, Self::Error> {
-        match v.as_str().parse() {
-            Ok(n @ 1...5) => Ok(Likert(n)),
-            _ => Err(v)
-        }
+        v.as_str().parse()
+    }
+}
+
+impl<'v> FromFormValue<'v> for Datestamp {
+    type Error = ParseIntError;
+
+    fn from_form_value(v: &'v RawStr) -> StdResult<Self, Self::Error> {
+        Ok(v.as_str().parse().map(Datestamp)?)
     }
 }
 
@@ -172,12 +226,11 @@ impl SurfaceData {
         Ok(Self {
             flow: flowname,
             date, num,
-            image: path.with_file_name("surface.png").to_string_lossy().into_owned(),
             ratings: flow.states.iter()
                                 .find(|s| s.name.starts_with("Wrap up")).unwrap() // TODO parse timestamps in flow crate
                                 .script.iter()
                                        .filter_map(|&(ref cmd, _)| match *cmd {
-                                           FlowCmd::Int { ref prompt, data: Some(d), .. } => Some(Rating { prompt: prompt.clone(), answer: d as u8, ..Default::default() }),
+                                           FlowCmd::Int { ref prompt, data: Some(d), .. } => Some((prompt.split('/').nth(1).unwrap().to_owned(), Likert(d as u8))),
                                            _ => None
                                        })
                                        .collect()
@@ -201,9 +254,18 @@ impl fmt::Display for Datestamp {
 }
 
 impl<'a> FromParam<'a> for FlowType {
-    type Error = &'static str;
+    type Error = <FlowType as FromStr>::Err;
+
     fn from_param(param: &'a RawStr) -> StdResult<Self, Self::Error> {
         param.as_str().parse()
+    }
+}
+
+impl<'v> FromFormValue<'v> for FlowType {
+    type Error = <FlowType as FromStr>::Err;
+
+    fn from_form_value(v: &'v RawStr) -> StdResult<Self, Self::Error> {
+        v.as_str().parse()
     }
 }
 
